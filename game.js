@@ -1,134 +1,83 @@
+/* Purple Auntie — complete offline-first game controller, no paid dependencies. */
 (()=>{
 'use strict';
 const E=window.PurpleAuntieEngine;
-const $=id=>document.getElementById(id);
-const SCREENS=['homeScreen','levelsScreen','gameScreen','resultScreen','helpScreen','settingsScreen'];
-const DEFAULT={unlocked:0,coins:0,stars:[0,0,0,0,0],best:[0,0,0,0,0],sound:true,vibrate:true,assist:true,difficulty:'easy'};
-function load(){try{const raw=JSON.parse(localStorage.getItem('purpleAuntieSaveV3')||'{}');return {...DEFAULT,...raw,stars:Array.isArray(raw.stars)?raw.stars.slice(0,5):[0,0,0,0,0],best:Array.isArray(raw.best)?raw.best.slice(0,5):[0,0,0,0,0]};}catch{return {...DEFAULT};}}
-let save=load();
-function persist(){try{localStorage.setItem('purpleAuntieSaveV3',JSON.stringify(save));}catch{}}
-let screen='homeScreen',returnScreen='homeScreen',nativeMode=false,toastTimer=0,audioCtx;
-const game={running:false,paused:false,level:0,round:0,typed:'',score:0,time:0,phase:'safe',phaseTime:0,held:new Set(),lastFrame:0};
-function show(id){SCREENS.forEach(s=>$(s).classList.toggle('active',s===id));screen=id; if(id!=='gameScreen')game.running=false; if(id==='levelsScreen')renderLevels(); if(id==='settingsScreen')renderSettings();}
-function notify(text){const el=$('toast');el.textContent=text;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),1450);}
-function sound(freq=600,seconds=.1,wave='sine'){if(!save.sound)return;try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain(),now=audioCtx.currentTime;o.type=wave;o.frequency.setValueAtTime(freq,now);o.frequency.exponentialRampToValueAtTime(Math.max(freq*.72,70),now+seconds);g.gain.setValueAtTime(.055,now);g.gain.exponentialRampToValueAtTime(.001,now+seconds);o.connect(g);g.connect(audioCtx.destination);o.start(now);o.stop(now+seconds+.01);}catch{}}
-function vibrate(ms=40){if(save.vibrate&&navigator.vibrate)navigator.vibrate(ms);}
-function currentLevel(){return E.LEVELS[game.level];}
-function currentText(){return currentLevel().lines[game.round]||'';}
-function renderLevels(){
- $('levelProgress').textContent=`${Math.min(5,save.unlocked+(save.stars[4]?1:0))}/5`;
- $('coinCount').textContent=save.coins;
- $('levelList').replaceChildren();
- E.LEVELS.forEach((level,i)=>{
-  const unlocked=i<=save.unlocked,btn=document.createElement('button');btn.type='button';btn.className='level-card'+(unlocked?'':' locked');btn.disabled=!unlocked;
-  const earned=save.stars[i]||0;
-  btn.innerHTML=`<span class="level-emoji">${unlocked?level.emoji:'🔒'}</span><span class="level-details"><span class="level-no">Lv.${i+1}</span><span class="level-name">${level.name}</span><span class="level-sub">${level.subtitle}</span><span class="level-stars">${[0,1,2].map(n=>n<earned?'⭐':'☆').join('')}</span></span><span class="level-arrow">${unlocked?'▶':'🔐'}</span>`;
-  btn.addEventListener('click',()=>startLevel(i));$('levelList').append(btn);
- });
+if(!E){document.body.textContent='ไม่พบไฟล์ knowledge.js';return;}
+const $=id=>document.getElementById(id), $$=(sel,scope=document)=>Array.from(scope.querySelectorAll(sel));
+const LEVELS=E.LEVELS, KEY='purple_auntie_deluxe_save_v1';
+const T=Object.freeze({
+ lavender:{id:'lavender',name:'ลาเวนเดอร์',emoji:'💜',price:0,desc:'สีม่วงคลาสสิก'},
+ rose:{id:'rose',name:'Rose Blush',emoji:'🌷',price:180,desc:'ชมพูไล่เฉด พร้อมหัวใจลอย'},
+ mint:{id:'mint',name:'Mint Pop',emoji:'🍃',price:260,desc:'แป้นสีเขียวมิ้นต์ กดแล้วเด้ง'},
+ night:{id:'night',name:'Galaxy Neon',emoji:'🌌',price:430,desc:'แป้นดำกลิตเตอร์และแสงนีออน'},
+ gold:{id:'gold',name:'Royal Gold',emoji:'👑',price:650,desc:'ปุ่มทองประกายระยิบระยับ'},
+ candy:{id:'candy',name:'Candy Dream',emoji:'🍭',price:850,desc:'พาสเทลหวานพร้อมเอฟเฟกต์ดาว'}
+});
+const BOOSTS={blind:{name:'ปิดตาป้า',emoji:'🙈',price:90,desc:'มองไม่เห็นตอนหันมา 6 วินาที'},freeze:{name:'หยุดเวลา',emoji:'❄️',price:75,desc:'หยุดนาฬิกานับถอยหลัง 7 วินาที'},hint:{name:'พิมพ์วาร์ป',emoji:'✨',price:55,desc:'เติมตัวอักษรถูกต้องให้อัตโนมัติ 6 ตัว'}};
+const DEFAULT={name:'นักเมาท์สายม่วง',coins:200,gems:0,owned:['lavender'],equipped:'lavender',boosts:{blind:2,freeze:2,hint:2},unlocked:0,stars:[0,0,0,0,0],best:[0,0,0,0,0],rankBest:0,wins:0,plays:0,sound:true,vibrate:true,reduceMotion:false,difficulty:'normal'};
+function load(){try{let data=JSON.parse(localStorage.getItem(KEY)||'{}');return {...DEFAULT,...data,owned:Array.isArray(data.owned)?data.owned:['lavender'],stars:Array.isArray(data.stars)?data.stars.slice(0,5):[0,0,0,0,0],best:Array.isArray(data.best)?data.best.slice(0,5):[0,0,0,0,0],boosts:{...DEFAULT.boosts,...(data.boosts||{})}};}catch{return {...DEFAULT,boosts:{...DEFAULT.boosts},owned:['lavender'],stars:[0,0,0,0,0],best:[0,0,0,0,0]};}}
+let save=load(), active='home',lastScreen='home',game=null,toastTimeout=0,currentCategory='keyboard', boardType='local',challenge=null,auth=null,audioCtx=null, raf=0;
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(save));}catch(e){console.warn('Could not save',e);}}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function beep(hz=530,duration=.08){if(!save.sound)return;try{audioCtx ||=new (window.AudioContext||window.webkitAudioContext)();const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type='sine';osc.frequency.value=hz;gain.gain.setValueAtTime(.065,audioCtx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+duration);osc.connect(gain);gain.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+duration);}catch{}}
+function buzz(duration=50){if(save.vibrate&&navigator.vibrate)navigator.vibrate(duration);}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('visible');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>t.classList.remove('visible'),2800);}
+function show(name){if(game?.running&&active==='game'&&name!=='game'){game.running=false;cancelAnimationFrame(raf);}active=name;$$('.screen').forEach(s=>s.classList.toggle('active',s.id===name));if(name==='levels')renderLevels();if(name==='shop')renderShop();if(name==='rank')renderRank();if(name==='account')renderAccount();if(name==='friends')renderFriends();if(name==='settings')renderSettings();if(name==='home')updateWallet();window.scrollTo?.(0,0);}
+function updateWallet(){$$('[data-coins]').forEach(e=>e.textContent=save.coins.toLocaleString('th-TH'));$$('[data-gems]').forEach(e=>e.textContent=save.gems.toLocaleString('th-TH'));$('homePlayer').textContent=save.name;$('app').dataset.keyboard=save.equipped;}
+function renderLevels(){updateWallet();$('levelGrid').innerHTML=LEVELS.map((l,i)=>{const lock=i>save.unlocked;return `<button class="level-card ${lock?'locked':''}" data-level="${i}" ${lock?'disabled':''}><span class="level-photo"><img src="${document.querySelector('[data-img=street]').src}" alt="ภาพด่าน" loading="lazy"></span><span class="level-details"><b class="level-no">LV.${i+1}</b><strong class="level-name">${esc(l.name)}</strong><small class="level-sub">${esc(l.subtitle)}</small><span class="level-stars">${Array.from({length:3},(_,x)=>x<save.stars[i]?'⭐':'☆').join('')}</span></span><span class="level-go">${lock?'🔒':'▶'}</span></button>`;}).join('');}
+function openSettingsSheet(){openSheet('<h2>วิธีเล่น 💜</h2><p>🟢 พิมพ์ตามประโยคให้ทันเวลา<br>🟡 ใกล้หันมา ให้ระวัง<br>🔴 เมื่อป้าหันมา ต้องหยุดพิมพ์!</p><p>ครบ 5 ประโยคจะผ่านด่าน ได้เหรียญและดาวมากขึ้นเมื่อทำเวลาได้ดี</p><button class="mega-button" data-action="close-sheet">เข้าใจแล้ว ▶</button>');}
+function openSheet(html){$('sheetContent').innerHTML=html;$('sheet').classList.remove('hidden');}
+function closeSheet(){$('sheet').classList.add('hidden');}
+function pressKeyFx(node){if(!node)return;node.classList.remove('pressed');void node.offsetWidth;node.classList.add('pressed');setTimeout(()=>node.classList.remove('pressed'),150);if(['rose','gold','candy','night'].includes(save.equipped))sparkle(node);}
+function sparkle(node){const kb=$('keyboard');if(!node||!kb)return;const b=node.getBoundingClientRect(),p=kb.getBoundingClientRect();const star=document.createElement('span');star.className='key-spark';star.textContent=save.equipped==='gold'?'✦':save.equipped==='rose'?'♥':save.equipped==='night'?'✧':'✿';star.style.left=(b.left+b.width/2-p.left)+'px';star.style.top=(b.top-p.top)+'px';kb.appendChild(star);setTimeout(()=>star.remove(),600);}
+function glyph(x){const marks='่้๊๋ิีึืุูั็์ํ';return marks.includes(x)?'◌'+x:x;}
+function keyboardFor(line){const defaultRows=['ๆไำพะัีรนยบล','ฟหกดเ้่าสวงข','ผปแอิืทมใฝ'];const chars=Array.from(line).filter(x=>x!==' ');const unique=[...new Set([...defaultRows.join(''),...chars])].filter(x=>x.trim());const groups=[[],[],[]];unique.forEach((char,i)=>groups[Math.min(2,Math.floor(i/(Math.ceil(unique.length/3))))].push(char));['key1','key2','key3'].forEach((id,i)=>{$(id).innerHTML=groups[i].map(c=>`<button type="button" class="key" data-char="${esc(c)}" aria-label="${esc(c)}">${esc(glyph(c))}</button>`).join('');});}
+function phaseLength(phase){const diff=game.mode==='ranked'?'normal':save.difficulty;const s=E.SETTINGS[diff]||E.SETTINGS.normal;const base=phase==='safe'?s.away:phase==='warn'?s.warn:s.look;return Math.max(.5,base + (phase==='safe'?Math.random()*.9:0));}
+function newPhase(p){if(!game)return;game.phase=p;game.phaseMax=phaseLength(p);game.phaseLeft=game.phaseMax;const stage=$('stage');stage.classList.toggle('looking',p==='look');stage.classList.toggle('warning',p==='warn');const status=$('gameStatus');status.className='status '+(p==='safe'?'safe':p==='warn'?'warn':'look');status.textContent=p==='safe'?'⌨️ พิมพ์ได้!':p==='warn'?'⚠️ ป้ากำลังจะหัน!':'🚨 หยุดพิมพ์!';$('phaseTip').textContent=p==='safe'?'ป้าหันหลังอยู่ รีบพิมพ์!':p==='warn'?'อย่าเผลอกดคีย์บอร์ด!':'ป้ากำลังมอง ห้ามพิมพ์เด็ดขาด';$('bubbleRight').textContent=p==='look'?'‼️':p==='warn'?'👀':'♡';if(p==='look'){beep(180,.16);buzz(80);}else if(p==='warn')beep(340,.11);}
+function startGame(level=0,mode='story'){closeSheet();try{screen.orientation?.lock?.('portrait')?.catch?.(()=>{});}catch{}const ranked=mode==='ranked';const idx=ranked?Math.max(0,Math.min(LEVELS.length-1,level)):Math.min(level,save.unlocked);game={level:idx,mode,round:0,typed:'',score:0,total:LEVELS[idx].time+(ranked?0:save.difficulty==='easy'?10:save.difficulty==='hard'?-8:0),elapsed:0,phase:'safe',phaseLeft:0,phaseMax:1,blind:0,freeze:0,paused:false,running:true,last:performance.now(),mistakes:0};save.plays++;persist();$('game').classList.remove('physical');$('physicalInput').value='';$('pauseOverlay').classList.add('hidden');$('modeTag').textContent=ranked?'🏆 โหมดแรงค์ · ห้ามใช้ตัวช่วย':'🌸 โหมดสนุก';$('boostBlind').disabled=ranked;$('boostFreeze').disabled=ranked;$('boostHint').disabled=ranked;$('modeTag').style.background=ranked?'#9a45c5':'';$('stage').classList.remove('looking','warning');$('hudScore').textContent='0';updateBoostUI();updateRound();newPhase('safe');show('game');game.last=performance.now();cancelAnimationFrame(raf);raf=requestAnimationFrame(tick);beep(660);}
+function updateRound(){if(!game)return;game.typed='';$('physicalInput').value='';$('hudProgress').textContent=`${game.round}/5`;$('hudFill').style.width=(game.round/5*100)+'%';$('typedValue').textContent='';$('typedPlaceholder').hidden=false;$('accuracyLabel').textContent=`0/${Array.from(LEVELS[game.level].lines[game.round]).length}`;const line=LEVELS[game.level].lines[game.round];$('target').textContent=line;keyboardFor(line);updateNextKey();}
+function updateNextKey(){$$('.key.next-key').forEach(el=>el.classList.remove('next-key'));if(!game)return;const next=Array.from(gameTarget().slice(game.typed.length))[0];if(next){const btn=$$('.key[data-char]').find(b=>b.dataset.char===next);btn?.classList.add('next-key');}}
+function gameTarget(){return LEVELS[game.level].lines[game.round]||'';}
+function inputChar(char,el){if(!game?.running||game.paused)return;pressKeyFx(el);beep(490,.032);const protectedBlind=game.blind>0;if(game.phase==='look'&&!protectedBlind){finish(false,'ยังพิมพ์อยู่ตอนป้าหันมา!');return;}if(char==='\b'){game.typed=Array.from(game.typed).slice(0,-1).join('');drawTyped();return;}if(!char)return;const wanted=gameTarget();if(!wanted.startsWith(game.typed+char)){game.mistakes++;game.score=Math.max(0,game.score-3);$('task-card')?.classList.add('wrong');buzz(25);toast('พิมพ์ผิด ลองอีกครั้งนะ!');drawTyped();return;}
+game.typed+=char;game.score+=Math.max(1,6-(game.mistakes>0?1:0));drawTyped();if(game.typed===wanted){game.score+=70;game.round++;beep(840,.12);if(game.round>=5)finish(true);else{updateRound();newPhase('safe');}}
 }
-function tryOrientationLock(){try{const result=window.screen?.orientation?.lock?.('portrait');if(result?.catch)result.catch(()=>{});}catch{}}
-function startLevel(level){if(level>save.unlocked){notify('ผ่านด่านก่อนหน้าเพื่อปลดล็อกนะ 💜');return;}game.running=true;game.paused=false;game.level=level;game.round=0;game.typed='';game.score=0;game.time=currentLevel().time;game.phase='safe';game.phaseTime=E.SETTINGS[save.difficulty].away;game.held.clear();game.lastFrame=performance.now();nativeMode=false;$('editorPanel').classList.remove('native');$('pauseLayer').classList.add('hidden');$('realInput').value='';$('realInput').blur();show('gameScreen');game.running=true;renderPhrase();renderHUD();renderPhase();tryOrientationLock();sound(620,.14);}
-function renderHUD(){
- $('roundHud').textContent=`${game.round}/5`;
- $('roundProgress').style.width=`${Math.round(game.round/5*100)}%`;
- $('timeHud').textContent=E.clock(game.time);
- $('scoreHud').textContent=game.score;
-}
-function renderPhrase(){
- const line=currentText(),segments=E.split(line),count=E.split(game.typed).length;
- const holder=$('targetLine');holder.replaceChildren();
- segments.forEach((char,i)=>{const span=document.createElement('span');span.textContent=char;span.className=i<count?'done':i===count?'next':'';holder.append(span);});
- $('inputDisplay').textContent=game.typed;
- $('placeholder').classList.toggle('hidden',!!game.typed);
- $('realInput').value=game.typed;
- renderHUD();
-}
-function renderPhase(){
- const stage=$('gameStage'),badge=$('statusBadge');stage.classList.toggle('warning',game.phase==='warn');stage.classList.toggle('looking',game.phase==='look');badge.className='status-badge '+(game.phase==='safe'?'safe':game.phase==='warn'?'warn':'look');
- $('statusLabel').textContent=game.phase==='safe'?'พิมพ์ได้!':game.phase==='warn'?'ระวัง! ป้าจะหัน':'หยุดพิมพ์!';
- $('stageCaption').textContent=game.phase==='safe'?'ป้าหันหลังอยู่ พิมพ์ได้เลย':game.phase==='warn'?'เสียงฝีเท้าป้าใกล้เข้ามา…':'ป้ามองอยู่! ห้ามกดปุ่มเด็ดขาด';
-}
-function advancePhase(){game.phase=E.nextPhase(game.phase);const pace=E.SETTINGS[save.difficulty];game.phaseTime=game.phase==='safe'?pace.away:game.phase==='warn'?pace.warn:pace.look;renderPhase();if(game.phase==='warn'){sound(780,.14,'triangle');vibrate(50);}else if(game.phase==='look'){sound(300,.28,'sawtooth');vibrate([70,50,70]);if(game.held.size)lose('โดนจับได้!','ยังแตะแป้นอยู่ตอนป้าหันมา');}else sound(560,.08);}
-function tick(now){requestAnimationFrame(tick);const dt=Math.min(.08,Math.max(0,(now-game.lastFrame)/1000));game.lastFrame=now;if(!game.running||game.paused||screen!=='gameScreen'||document.hidden)return;game.time=Math.max(0,game.time-dt);game.phaseTime-=dt;
- if(game.time<=0){lose('หมดเวลา!','ยังเมาท์ไม่ครบ 5 ประโยคเลย');return;}
- if(game.phaseTime<=0)advancePhase();renderHUD();}
-function addGrapheme(char){if(!game.running||game.paused)return;if(game.phase==='look'){lose('โดนจับได้!','ป้ามองเห็นว่ายังพิมพ์อยู่');return;}
- const goal=currentText(),next=game.typed+char;if(!E.prefix(goal,next)){sound(175,.09);notify('ตัวอักษรไม่ตรง ลองใหม่อีกครั้ง');return;}
- game.typed=next;game.score+=10;renderPhrase();sound(700+((game.typed.length%5)*80),.035);
- if(game.typed===goal){finishPhrase();}
-}
-function finishPhrase(){game.score+=120;game.round+=1;game.typed='';sound(1100,.25);vibrate(80);if(game.round>=5){win();return;}renderPhrase();notify(`สุดยอด! ผ่าน ${game.round}/5 ประโยค ⭐`);}
-function onVirtualKey(char,ev){if(!game.running||game.paused)return;if(game.phase==='look'){lose('โดนจับได้!','ป้าหันมาแล้ว แต่ยังแตะคีย์บอร์ด');return;}
- if(char==='BACK'){const segments=E.split(game.typed);segments.pop();game.typed=segments.join('');renderPhrase();sound(290,.05);return;}
- const target=E.split(currentText()),position=E.split(game.typed).length;
- if(char==='HINT'){if(save.assist){addGrapheme(target[position]||'');return;}game.score=Math.max(0,game.score-5);addGrapheme(target[position]||'');return;}
- if(char==='SPACE')char=' ';
- if(save.assist){addGrapheme(target[position]||'');return;}
- addGrapheme(char);
-}
-function onPhysicalText(){if(!game.running||game.paused)return;
- if(game.phase==='look'){lose('โดนจับได้!','ป้าหันมาแล้ว แต่ยังพิมพ์อยู่');return;}
- const incoming=$('realInput').value;
- if(incoming===game.typed)return;
- if(E.prefix(currentText(),incoming)&&incoming.length>=game.typed.length){
-  game.score+=Math.max(1,E.split(incoming).length-E.split(game.typed).length)*10;
-  game.typed=incoming;renderPhrase();if(game.typed===currentText())finishPhrase();
- }else if(E.prefix(currentText(),incoming)&&incoming.length<game.typed.length){game.typed=incoming;renderPhrase();}
- else{$('realInput').value=game.typed;notify('พิมพ์ให้ตรงตามประโยคที่แสดงนะ');sound(210,.08);}
-}
-function endGame(ok,title,description){game.running=false;game.paused=false;game.held.clear();$('realInput').blur();$('pauseLayer').classList.add('hidden');$('resultScreen').classList.toggle('lost',!ok);$('resultHeading').textContent=title;$('resultCaption').textContent=description;
- const earned=ok?E.stars(game.time,currentLevel().time):0;
- $('resultStars').textContent=ok?Array.from({length:3},(_,i)=>i<earned?'⭐':'☆').join(''):'💔 👀 💔';
- const reward=ok?80+(earned*35):0;
- $('resultScore').textContent=game.score;$('resultTime').textContent=`${Math.ceil(game.time)} วิ`;$('resultCoins').textContent=reward;
- if(ok){save.coins+=reward;save.unlocked=Math.max(save.unlocked,Math.min(E.LEVELS.length-1,game.level+1));save.stars[game.level]=Math.max(save.stars[game.level]||0,earned);save.best[game.level]=Math.max(save.best[game.level]||0,game.score);persist();}
- $('resultSubline').textContent=ok?earned===3?'ยอดเยี่ยม! ได้ครบ 3 ดาว 💜':'เก่งมาก! ลองเก็บให้ครบ 3 ดาวดูนะ':'หยุดพิมพ์ให้ทัน แล้วลองใหม่อีกครั้งนะ';
- $('resultNext').classList.toggle('hidden',!ok);
- $('resultNext').textContent=game.level>=E.LEVELS.length-1?'🏆 เล่นด่านสุดท้ายอีกครั้ง':'เล่นด่านต่อไป ▶';
- show('resultScreen');sound(ok?990:230,.3);vibrate(ok?[90,70,100]:[160,90,160]);
-}
-function win(){endGame(true,'ผ่านด่าน!','ป้าจับไม่ได้ เก่งมาก! 🎉');}
-function lose(title,desc){if(!game.running)return;endGame(false,title,desc);}
-function pause(){if(!game.running||game.paused)return;game.paused=true;game.held.clear();$('realInput').blur();$('pauseLayer').classList.remove('hidden');}
-function resume(){if(!game.running)return;game.paused=false;game.lastFrame=performance.now();$('pauseLayer').classList.add('hidden');}
-function keyboardSetup(){const rows=[['ๆ','ไ','ำ','พ','ะ','ั','ี','ร','น','ย','บ','ล'],['ฟ','ห','ก','ด','เ','้','่','า','ส','ว','ง','ข'],['ผ','ป','แ','อ','ิ','ื','ท','ม','ใ','ฝ','ถ','ค']];
- rows.forEach((row,index)=>{const root=$('keyRow'+(index+1));row.forEach(key=>{const b=document.createElement('button');b.className='key';b.type='button';b.textContent=key;b.dataset.char=key;root.append(b);});});
- const bindKey=(el,char)=>{
-  el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;game.held.add(e.pointerId);el.classList.add('pressed');e.preventDefault();onVirtualKey(char,e);});
-  for(const evt of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(evt,e=>{game.held.delete(e.pointerId);el.classList.remove('pressed');});
- };
- document.querySelectorAll('[data-char]').forEach(k=>bindKey(k,k.dataset.char));
- bindKey($('keyHint'),'HINT');bindKey($('keySpace'),'SPACE');bindKey($('keyBack'),'BACK');bindKey($('keyEnter'),'HINT');
-}
-function renderSettings(){$('soundSetting').checked=save.sound;$('vibrateSetting').checked=save.vibrate;$('assistMode').classList.toggle('selected',save.assist);$('strictMode').classList.toggle('selected',!save.assist);document.querySelectorAll('[data-difficulty]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.difficulty===save.difficulty));}
-function fromModal(){show(returnScreen==='gameScreen'?'levelsScreen':returnScreen);}
-function openHelp(){returnScreen=screen;show('helpScreen');}
-function openSettings(){returnScreen=screen;show('settingsScreen');}
-function bind(){
- keyboardSetup();
- $('homeStart').onclick=()=>startLevel(Math.min(save.unlocked,4));
- $('homeSound').onclick=()=>{save.sound=!save.sound;persist();notify(save.sound?'เปิดเสียงแล้ว 🔊':'ปิดเสียงแล้ว 🔇');sound(840,.1);};
- $('homeHelp').onclick=openHelp;$('homeSettings').onclick=openSettings;
- $('openLevels').onclick=()=>show('levelsScreen');$('levelsBack').onclick=()=>show('homeScreen');$('levelsHelp').onclick=openHelp;
- document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const n=b.dataset.nav;if(n==='home')show('homeScreen');else if(n==='levels')show('levelsScreen');else if(n==='help')openHelp();else openSettings();});
- $('gameHome').onclick=()=>{pause();};$('gamePause').onclick=pause;$('resumeGame').onclick=resume;$('restartGame').onclick=()=>startLevel(game.level);$('quitGame').onclick=()=>{game.running=false;$('pauseLayer').classList.add('hidden');show('levelsScreen');};
- $('nativeToggle').onclick=()=>{nativeMode=true;$('editorPanel').classList.add('native');$('realInput').value=game.typed;$('realInput').focus();notify('พิมพ์เองด้วยคีย์บอร์ดเครื่องได้เลย');};
- $('realInput').addEventListener('beforeinput',e=>{if(e.inputType==='insertFromPaste'||e.inputType==='insertFromDrop')e.preventDefault();if(game.phase==='look'&&game.running){e.preventDefault();lose('โดนจับได้!','ป้าหันมาแล้ว แต่ยังพิมพ์อยู่');}});
- $('realInput').addEventListener('input',onPhysicalText);
- $('realInput').addEventListener('keydown',e=>{if(game.phase==='look'&&game.running&&e.key.length===1){e.preventDefault();lose('โดนจับได้!','ป้าเห็นพิมพ์ต่อหน้าต่อตา');}if(e.key==='Escape'){e.preventDefault();pause();}});
- $('resultMenu').onclick=()=>show('levelsScreen');$('resultRetry').onclick=()=>startLevel(game.level);$('resultNext').onclick=()=>startLevel(Math.min(game.level+1,4));
- document.querySelectorAll('[data-back]').forEach(b=>b.onclick=fromModal);
- $('helpPlay').onclick=()=>startLevel(Math.min(save.unlocked,4));$('saveSettings').onclick=()=>{persist();fromModal();};
- $('soundSetting').onchange=e=>{save.sound=e.target.checked;persist();if(save.sound)sound(660,.1);};
- $('vibrateSetting').onchange=e=>{save.vibrate=e.target.checked;persist();};
- $('assistMode').onclick=()=>{save.assist=true;persist();renderSettings();};$('strictMode').onclick=()=>{save.assist=false;persist();renderSettings();};
- document.querySelectorAll('[data-difficulty]').forEach(b=>b.onclick=()=>{save.difficulty=b.dataset.difficulty;persist();renderSettings();});
- $('resetProgress').onclick=()=>{if(!window.confirm('ล้างคะแนน ดาว และด่านที่ปลดล็อกทั้งหมดในเครื่องนี้?'))return;const settings={sound:save.sound,vibrate:save.vibrate,assist:save.assist,difficulty:save.difficulty};save={...DEFAULT,...settings,stars:[0,0,0,0,0],best:[0,0,0,0,0]};persist();notify('ล้างสถิติแล้ว');};
- window.addEventListener('keydown',e=>{if(e.key==='Escape'&&screen==='gameScreen'&&game.running){e.preventDefault();game.paused?resume():pause();}});
- document.addEventListener('visibilitychange',()=>{if(document.hidden&&game.running)pause();game.lastFrame=performance.now();});
- window.addEventListener('blur',()=>{if(game.running)pause();});
- document.addEventListener('contextmenu',e=>{if(e.target.closest('.keyboard'))e.preventDefault();});
- requestAnimationFrame(tick);
-}
-bind();
+function drawTyped(){if(!game)return;$('typedValue').textContent=game.typed;$('typedPlaceholder').hidden=!!game.typed;$('accuracyLabel').textContent=`${Array.from(game.typed).length}/${Array.from(gameTarget()).length}`;$('hudScore').textContent=game.score;updateNextKey();}
+function onPhysicalValue(value){if(!game?.running||game.paused)return;if(game.phase==='look'&&game.blind<=0&&value!==game.typed){finish(false,'ป้าจับได้ตอนกำลังพิมพ์!');return;}const target=gameTarget();if(target.startsWith(value)){game.typed=value;game.score+=2;drawTyped();if(game.typed===target){game.score+=70;game.round++;if(game.round>=5)finish(true);else{updateRound();newPhase('safe');$('physicalInput').focus();}}}else{$('physicalInput').value=game.typed;toast('ข้อความยังไม่ตรง ลองใหม่');}}
+function tick(now){if(!game?.running||game.paused)return;const dt=Math.max(0,Math.min(.08,(now-game.last)/1000));game.last=now;game.elapsed+=dt;game.phaseLeft-=dt;if(game.blind>0){game.blind=Math.max(0,game.blind-dt);$('stage').classList.toggle('blind-active',game.blind>0);}
+if(game.freeze>0){game.freeze=Math.max(0,game.freeze-dt);}else{game.total-=dt;}
+if(game.phaseLeft<=0)newPhase(E.nextPhase(game.phase));$('phaseFill').style.width=(100*Math.max(0,game.phaseLeft/game.phaseMax))+'%';$('hudTime').textContent=E.clock(game.total);if(game.total<=0){finish(false,'หมดเวลาก่อนพิมพ์ครบ!');return;}raf=requestAnimationFrame(tick);}
+function pause(){if(!game?.running)return;game.paused=true;cancelAnimationFrame(raf);$('pauseOverlay').classList.remove('hidden');}
+function resume(){if(!game?.running)return;game.paused=false;game.last=performance.now();$('pauseOverlay').classList.add('hidden');raf=requestAnimationFrame(tick);}
+function finish(win,reason=''){if(!game?.running)return;game.running=false;cancelAnimationFrame(raf);const score=game.score+Math.max(0,Math.round(game.total*3)),level=game.level;let stars=0,coins=0;if(win){stars=E.stars(game.total,LEVELS[level].time);coins=Math.max(20,15+stars*20+Math.floor(score/70));save.coins+=coins;save.wins++;if(game.mode!=='ranked'){save.stars[level]=Math.max(save.stars[level],stars);save.unlocked=Math.max(save.unlocked,Math.min(4,level+1));save.best[level]=Math.max(save.best[level],score);}else{save.rankBest=Math.max(save.rankBest,score);sendOnlineScore(score,'ranked').catch(()=>{});if(challenge&&challenge.level===level&&window.PurpleCloud?.ready&&auth)window.PurpleCloud.submitRoomScore(challenge.code,score,save.name).catch(e=>console.warn('Challenge score',e.message));}beep(920,.22);}else{beep(155,.25);buzz(190);}persist();$('resultTitle').textContent=win?'ผ่านด่าน! ✨':'โดนจับได้! 🚨';$('resultImg').src=document.querySelector(`[data-img=${win?'success':'failure'}]`).src;$('resultStars').textContent=win?'⭐'.repeat(stars)+'☆'.repeat(3-stars):'💔';$('resultDesc').textContent=win?'รอดจากสายตาป้าแล้ว เก่งมาก!':reason;$('finalScore').textContent=score;$('finalTime').textContent=Math.max(0,Math.ceil(game.total));$('finalCoins').textContent=coins;$('rankHint').textContent=game.mode==='ranked'?'🏆 โหมดแรงค์ไม่มีตัวช่วย · คะแนนออนไลน์ต้องล็อกอิน':`ด่าน ${level+1} · ${LEVELS[level].name}`;$('resultNext').hidden=!win||level>=4||game.mode==='ranked';show('result');}
+function useBoost(kind){if(!game?.running||game.paused||game.mode==='ranked'){toast('โหมดแรงค์ไม่อนุญาตให้ใช้ตัวช่วย');return;}if((save.boosts[kind]||0)<1){toast('ตัวช่วยหมดแล้ว ซื้อเพิ่มที่ร้านค้า');return;}if(kind==='blind'){game.blind=Math.max(game.blind,6);$('stage').classList.add('blind-active');}if(kind==='freeze')game.freeze=Math.max(game.freeze,7);if(kind==='hint'){const rest=gameTarget().slice(game.typed.length),text=Array.from(rest).slice(0,6).join('');game.typed+=text;game.score+=text.length*2;drawTyped();if(game.typed===gameTarget()){game.score+=70;game.round++;if(game.round>=5)finish(true);else{updateRound();newPhase('safe');}}}
+save.boosts[kind]--;persist();updateBoostUI();beep(760,.19);toast('ใช้ '+BOOSTS[kind].name+'สำเร็จ!');}
+function updateBoostUI(){Object.keys(BOOSTS).forEach(k=>$('stock'+k[0].toUpperCase()+k.slice(1)).textContent='×'+(save.boosts[k]||0));}
+function renderShop(){updateWallet();$$('#shopTabs button').forEach(b=>b.classList.toggle('on',b.dataset.category===currentCategory));$('shopFeatureTitle').textContent=currentCategory==='keyboard'?'⌨️ เปลี่ยนคีย์บอร์ด เปลี่ยนความวิบวับ':currentCategory==='boost'?'✨ ตัวช่วยแก้เกม หยุดสายตาป้า':'💎 โหมดเติมเงิน (ยังไม่เปิดรับชำระ)';$('shopFeatureDesc').textContent=currentCategory==='keyboard'?'ซื้อด้วยเหรียญที่หาได้จากเกมแล้วใช้ได้ถาวร':currentCategory==='boost'?'ใช้เหรียญซื้อและใช้ในโหมดสนุกได้':'ยังไม่มีการรับเงินจริง ระบบแสดงตัวอย่างสินค้าเท่านั้น';let cards=[];
+if(currentCategory==='keyboard')cards=Object.values(T).map(t=>{const owned=save.owned.includes(t.id),active=t.id===save.equipped;return `<article class="shop-card"><div class="shop-preview ${t.id}"><span class="demo-key">${t.emoji}</span><span class="mini-spark">✦</span></div><strong>${esc(t.name)}</strong><p>${esc(t.desc)}</p><button class="cost-button" data-buy-theme="${t.id}" ${active?'disabled':''}>${active?'✓ ใช้อยู่':owned?'ใช้ธีมนี้':'🪙 '+t.price}</button></article>`;});
+if(currentCategory==='boost')cards=Object.entries(BOOSTS).map(([id,b])=>`<article class="shop-card"><div class="shop-preview rose">${b.emoji}</div><strong>${b.name}</strong><p>${b.desc}<br>มีแล้ว ×${save.boosts[id]||0}</p><button class="cost-button" data-buy-boost="${id}">🪙 ${b.price}</button></article>`);
+if(currentCategory==='premium')cards=[['💎 100 เพชร','฿29 · ตัวอย่าง'],['💎 500 เพชร','฿119 · ตัวอย่าง'],['👑 VIP Lavender','฿199 · ตัวอย่าง'],['✨ เอฟเฟกต์พรีเมียม','฿49 · ตัวอย่าง']].map(([name,price])=>`<article class="shop-card"><div class="shop-preview night">💎</div><strong>${name}</strong><p>${price}</p><button class="cost-button" data-action="topup">ดูสถานะการเปิดขาย</button></article>`);
+$('shopCards').innerHTML=cards.join('');}
+function purchaseTheme(id){const t=T[id];if(!t)return;if(save.owned.includes(id)){save.equipped=id;persist();updateWallet();renderShop();beep(750);return;}if(save.coins<t.price){toast(`เหรียญไม่พอ ต้องการอีก ${t.price-save.coins} เหรียญ`);return;}save.coins-=t.price;save.owned.push(id);save.equipped=id;persist();updateWallet();renderShop();toast('ซื้อธีม '+t.name+' สำเร็จ!');beep(850,.15);}
+function purchaseBoost(id){const b=BOOSTS[id];if(!b)return;if(save.coins<b.price){toast('เหรียญไม่พอ เล่นเกมเพื่อเก็บเพิ่มได้');return;}save.coins-=b.price;save.boosts[id]=(save.boosts[id]||0)+1;persist();renderShop();toast('ซื้อตัวช่วย '+b.name+' สำเร็จ!');}
+function topup(){openSheet('<h2>💎 ระบบเติมเงิน</h2><p><b>ยังไม่เปิดชำระเงินจริง</b> เพื่อความปลอดภัยของผู้เล่นและเจ้าของเกม</p><p>เมื่อต้องการขายจริงต้องมีผู้ให้บริการชำระเงิน, ฝั่งเซิร์ฟเวอร์ตรวจ webhook และระบบยืนยันสิทธิ์ซื้อ ห้ามใส่ secret key ในเว็บ</p><button class="mega-button" data-action="close-sheet">รับทราบ 💜</button>');}
+function rankName(){const p=save.rankBest;return p>=1300?'👑 Purple Legend':p>=950?'💎 Diamond Whisper':p>=600?'🥇 Golden Gossip':p>=280?'🥈 Silver Spark':'🥉 Bronze Lavender';}
+function renderRank(){updateWallet();$('leagueName').textContent=rankName();$('leagueXP').textContent='คะแนนแรงค์สูงสุด '+save.rankBest.toLocaleString();$$('#rank .tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.action==='board-'+boardType));$('boardNotice').textContent=boardType==='local'?'นี่คืออันดับจำลองในเครื่อง ไม่มีผู้เล่นจริงคนอื่น':auth?'กำลังโหลดคะแนนออนไลน์จาก Supabase':'ต้องเชื่อม Supabase และล็อกอินก่อนดูอันดับจริง';const items=[{name:save.name,score:save.rankBest,me:true},{name:'บอทลาเวนเดอร์ 🌸',score:330},{name:'บอทชานม 🧋',score:200},{name:'บอทมะลิ 🐱',score:100}].sort((a,b)=>b.score-a.score);renderBoard(items);if(boardType==='online')fetchOnlineRank();}
+function renderBoard(items){$('leaderboard').innerHTML=items.length?items.map((p,i)=>`<div class="leader-row"><span class="place">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</span><span class="person"><b>${esc(p.name)}</b><small>${p.me?'คุณ':'ผู้เล่น'}</small></span><strong>${Number(p.score).toLocaleString()}</strong></div>`).join(''):'<div class="detail-card">ยังไม่มีข้อมูลอันดับ</div>';}
+function renderAccount(){$('accountName').textContent=save.name;$('nickInput').value=save.name;$('loginStatus').textContent=auth?`ล็อกอินอยู่ · ${auth.email||'บัญชีออนไลน์'}`:'แขก · เก็บข้อมูลในเครื่องนี้';$('authNotice').textContent=window.PurpleCloud?.ready?'บัญชีเชื่อม Supabase ได้แล้ว คะแนนโหมดแรงค์จะส่งออนไลน์หลังผ่านด่าน':'ยังไม่ตั้งค่า Supabase เล่นแบบแขกได้ทันที';$('profileBadge').textContent=rankName();$('profileStats').innerHTML=`<div>🏁 เล่นไปแล้ว <b>${save.plays}</b></div><div>🏆 ชนะ <b>${save.wins}</b></div><div>⭐ ดาวสะสม <b>${save.stars.reduce((a,b)=>a+b,0)}</b></div><div>🪙 เหรียญ <b>${save.coins}</b></div>`;}
+function renderFriends(){const select=$('challengeLevel');select.innerHTML=LEVELS.map((l,i)=>`<option value="${i}">${i+1}. ${esc(l.name)}</option>`).join('');$('dailyLabel').textContent='วันนี้: ด่าน '+((Math.floor(Date.now()/86400000)%LEVELS.length)+1)+' · คนที่คะแนนสูงสุดชนะ';}
+function renderSettings(){$('settingSound').checked=save.sound;$('settingVibration').checked=save.vibrate;$('settingMotion').checked=save.reduceMotion;$('difficultySelect').value=save.difficulty;}
+function settingsChange() {save.sound=$('settingSound').checked;save.vibrate=$('settingVibration').checked;save.reduceMotion=$('settingMotion').checked;save.difficulty=$('difficultySelect').value;$('app').classList.toggle('motion-off',save.reduceMotion);persist();}
+function randomCode(){if(crypto?.getRandomValues){const a=new Uint8Array(6);crypto.getRandomValues(a);return [...a].map(x=>x.toString(16).padStart(2,'0')).join('');}return Math.random().toString(36).slice(2,14);}
+function createChallenge(){const level=Number($('challengeLevel').value),code=randomCode();challenge={code,level};const u=new URL(location.href);u.searchParams.set('challenge',code);u.searchParams.set('level',level);u.searchParams.delete('rank');$('shareLink').value=u.toString();$('sharePanel').classList.remove('hidden');toast('สร้างลิงก์ให้เพื่อนแล้ว!');}
+function sharedChallenge(){const p=new URLSearchParams(location.search);const code=p.get('challenge'),level=Number(p.get('level')||0);if(code&&/^[a-z\d]{6,24}$/i.test(code)&&level>=0&&level<LEVELS.length){challenge={code,level};openSheet(`<h2>⚡ เพื่อนท้ามา!</h2><p>คุณถูกท้าให้เล่นด่าน ${level+1} (${esc(LEVELS[level].name)})<br>พิมพ์ให้ไวแล้วส่งคะแนนให้เพื่อนดู</p><button class="mega-button" data-action="accept-challenge">รับคำท้า ▶</button>`);}}
+function shareResult(){const url=challenge?$('shareLink').value||location.href:location.href;const text=`💜 มนุษย์ป้าม่วง: ฉันได้ ${save.rankBest} คะแนนแรงค์! กล้ามาท้าไหม? ${url}`;if(navigator.share)navigator.share({title:'มนุษย์ป้าม่วง',text}).catch(()=>{});else{navigator.clipboard?.writeText(text).then(()=>toast('คัดลอกผลแข่งขันแล้ว')).catch(()=>toast(text));}}
+async function connectCloud(){if(!window.PurpleCloud?.ready)return;try{auth=await window.PurpleCloud.session();renderAccount();}catch(e){console.warn('Cloud session',e.message);}}
+async function authAction(type){if(!window.PurpleCloud?.ready){toast('ต้องตั้งค่า Supabase ก่อนใช้บัญชีออนไลน์');return;}try{const email=$('emailInput').value.trim(),password=$('passwordInput').value;let result;if(type==='google')result=await window.PurpleCloud.google();else{if(!email||password.length<6){toast('กรอกอีเมลและรหัสผ่านอย่างน้อย 6 ตัว');return;}result=type==='register'?await window.PurpleCloud.register(email,password):await window.PurpleCloud.login(email,password);}if(type==='register'){auth=await window.PurpleCloud.session().catch(()=>null);toast('สมัครแล้ว โปรดตรวจอีเมลเพื่อยืนยันบัญชี');renderAccount();}else{auth=result?.user||await window.PurpleCloud.session();toast('ดำเนินการบัญชีเรียบร้อย');renderAccount();}}catch(e){toast('เข้าสู่ระบบไม่สำเร็จ: '+e.message);}}
+async function sendOnlineScore(score,mode){if(!window.PurpleCloud?.ready||!auth)return;try{await window.PurpleCloud.submitScore({score,mode,name:save.name});toast('บันทึกคะแนนออนไลน์แล้ว');}catch(e){console.warn('Cloud score',e.message);}}
+async function fetchOnlineRank(){if(!window.PurpleCloud?.ready){$('boardNotice').textContent='ยังไม่เชื่อม Supabase กรุณาตั้งค่าก่อน';renderBoard([]);return;}try{const records=await window.PurpleCloud.topScores();renderBoard(records.map(r=>({name:r.nickname,score:r.score,me:auth?.id===r.user_id})));$('boardNotice').textContent='อันดับทดสอบออนไลน์ · ต้องเพิ่มระบบตรวจคะแนนบนเซิร์ฟเวอร์ก่อนแข่งขันชิงรางวัลจริง';}catch(e){$('boardNotice').textContent='โหลดอันดับไม่ได้: '+e.message;renderBoard([]);}}
+async function viewChallenge(){if(!challenge){$('challengeBoard').textContent='กรุณาสร้างลิงก์ท้าเพื่อนก่อน';return;}if(!window.PurpleCloud?.ready){$('challengeBoard').textContent='ยังไม่ได้เปิดห้องออนไลน์ แชร์ลิงก์ให้เพื่อนแล้วเทียบคะแนนด้วยตนเองได้';return;}try{const r=await window.PurpleCloud.roomScores(challenge.code);$('challengeBoard').textContent=r.map(x=>`${x.nickname}: ${x.score} คะแนน`).join(' · ')||'ห้องนี้ยังไม่มีคนส่งคะแนน';}catch(e){toast(e.message);}}
+function handleAction(action){switch(action){case 'quick-start':startGame(save.unlocked);break;case 'pause':pause();break;case 'resume':resume();break;case 'quit':if(game){game.running=false;cancelAnimationFrame(raf);} $('pauseOverlay').classList.add('hidden');show('levels');break;case 'restart':case 'retry':startGame(game?.level||0,game?.mode||'story');break;case 'next-level':startGame(Math.min(4,(game?.level||0)+1));break;case 'sound':save.sound=!save.sound;persist();toast(save.sound?'เปิดเสียงแล้ว':'ปิดเสียงแล้ว');break;case 'toggle-physical':$('game').classList.toggle('physical');$('physicalInput').value=game?.typed||'';if($('game').classList.contains('physical'))$('physicalInput').focus();break;case 'topup':topup();break;case 'close-sheet':closeSheet();break;case 'board-local':boardType='local';renderRank();break;case 'board-online':boardType='online';renderRank();break;case 'start-ranked':startGame(0,'ranked');break;case 'create-challenge':createChallenge();break;case 'copy-link':navigator.clipboard?.writeText($('shareLink').value).then(()=>toast('คัดลอกลิงก์แล้ว')).catch(()=>{ $('shareLink').select();document.execCommand('copy');toast('คัดลอกลิงก์แล้ว');});break;case 'share-link':shareResult();break;case 'view-challenge':viewChallenge();break;case 'daily-challenge':startGame(Math.floor(Date.now()/86400000)%LEVELS.length,'ranked');break;case 'accept-challenge':closeSheet();startGame(challenge?.level||0,'ranked');break;case 'save-nick':save.name=$('nickInput').value.trim().slice(0,18)||DEFAULT.name;persist();renderAccount();toast('บันทึกชื่อเรียบร้อย');break;case 'email-login':authAction('login');break;case 'email-register':authAction('register');break;case 'google-login':authAction('google');break;case 'logout':if(window.PurpleCloud?.ready)window.PurpleCloud.logout().catch(console.warn);auth=null;renderAccount();toast('ออกจากบัญชีแล้ว');break;case 'reset-save':openSheet('<h2>ล้างข้อมูลทั้งหมด?</h2><p>เหรียญ ด่านที่ผ่าน ธีมที่ซื้อด้วยเหรียญ และคะแนนในเครื่องจะถูกลบถาวร</p><button class="mega-button" data-action="confirm-reset">ล้างข้อมูล</button><button class="sub-button" data-action="close-sheet">ยกเลิก</button>');break;case 'confirm-reset':localStorage.removeItem(KEY);save=load();closeSheet();updateWallet();show('home');toast('ล้างข้อมูลแล้ว');break;default:break;}}
+function handleClick(ev){const button=ev.target.closest('button');if(!button)return;if(button.dataset.nav){closeSheet();if(active==='game'&&game?.running){pause();return;}show(button.dataset.nav);return;}if(button.dataset.action){handleAction(button.dataset.action);return;}if(button.dataset.level!==undefined){startGame(Number(button.dataset.level));return;}if(button.dataset.buyTheme){purchaseTheme(button.dataset.buyTheme);return;}if(button.dataset.buyBoost){purchaseBoost(button.dataset.buyBoost);return;}if(button.dataset.boost){useBoost(button.dataset.boost);return;}if(button.dataset.category){currentCategory=button.dataset.category;renderShop();return;}if(button.dataset.char){inputChar(button.dataset.char,button);return;}if(button.dataset.special){if(button.dataset.special==='back')inputChar('\b',button);else if(button.dataset.special==='space')inputChar(' ',button);else if(button.dataset.special==='next'){handleAction('toggle-physical');}}}
+function init(){document.addEventListener('click',handleClick);$('physicalInput').addEventListener('input',e=>onPhysicalValue(e.target.value));['settingSound','settingVibration','settingMotion','difficultySelect'].forEach(id=>$(id).addEventListener('change',settingsChange));document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('sheet').classList.contains('hidden'))closeSheet();else if(active==='game'&&game?.running)game.paused?resume():pause();}if(active==='game'&&game?.running&&!$('game').classList.contains('physical')&&e.target.tagName!=='INPUT'&&e.key==='Backspace'){e.preventDefault();inputChar('\b');}});$('sheet').addEventListener('click',e=>{if(e.target===$('sheet'))closeSheet();});$('app').classList.toggle('motion-off',save.reduceMotion);updateWallet();show('home');connectCloud();sharedChallenge();}
+init();
 })();
