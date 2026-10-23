@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#6923b6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="มนุษย์ป้าม่วง — เกมพิมพ์เมาท์สุดป่วนสไตล์ 3D เล่นแนวตั้งทั้งเกม!">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="preload" href="./assets/title.webp" as="image" type="image/webp">
+  <link rel="preload" href="./assets/street.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="./style.css">
+  <title>มนุษย์ป้าม่วง 💜</title>
+</head>
+<body>
+ <div id="orientationWarning" aria-live="polite"><span class="turn-phone">📱</span><h2>หมุนหน้าจอเป็นแนวตั้งนะ!</h2><p>เกมมนุษย์ป้าม่วงออกแบบให้เล่นแนวตั้งเท่านั้น 💜</p></div>
+ <main id="phone" class="phone" aria-label="เกมมนุษย์ป้าม่วง">
+  <section class="screen home active" id="homeScreen" aria-label="หน้าเริ่มเกม">
+   <img class="home-art" src="./assets/title.webp" alt="ป้าม่วงสวมเสื้อไหมพรมสีม่วงและน้องจิ๋วในตรอกดอกไม้สไตล์การ์ตูนสามมิติ" draggable="false">
+   <button id="homeSound" class="home-sound tap-target" title="เปิดหรือปิดเสียง" aria-label="เปิดหรือปิดเสียง">🔊</button>
+   <button id="homeHelp" class="home-tip tap-target" aria-label="วิธีเล่น" title="วิธีเล่น"></button>
+   <button id="homeStart" class="home-start tap-target" aria-label="เริ่มเล่นเกม"></button>
+   <div class="home-links"><button id="openLevels">🗺️ เลือกด่าน</button><button id="homeSettings">⚙️ ตั้งค่า</button></div>
+  </section>
+  <section class="screen menu-screen" id="levelsScreen" aria-label="เลือกด่าน">
+   <div class="menu-bg"></div>
+   <header class="page-head"><button id="levelsBack" class="round-button" aria-label="กลับหน้าแรก">‹</button><h1>🌸 เลือกด่าน 🌸</h1><button id="levelsHelp" class="round-button" aria-label="วิธีเล่น">?</button></header>
+   <div class="balance-row"><div>🏆 ผ่านแล้ว <b id="levelProgress">0/5</b></div><div>🪙 <b id="coinCount">0</b></div></div>
+   <div class="level-list" id="levelList"></div>
+   <p class="menu-footnote">ผ่านด่านเพื่อปลดล็อกเรื่องเมาท์ใหม่ ๆ 💜</p>
+   <nav class="bottom-nav"><button class="selected" data-nav="home">⌂<small>หน้าแรก</small></button><button data-nav="levels">★<small>เลือกด่าน</small></button><button data-nav="help">❔<small>วิธีเล่น</small></button><button data-nav="settings">⚙<small>ตั้งค่า</small></button></nav>
+  </section>
+  <section class="screen game-screen" id="gameScreen" aria-label="หน้าเล่นเกม">
+   <div class="game-stage" id="gameStage">
+    <img class="scene-picture" id="scenePicture" src="./assets/street.webp" alt="น้องจิ๋วเดินอยู่ข้างหลังป้าม่วงในตรอกดอกไม้" draggable="false">
+    <img class="scene-caught" src="./assets/caught.webp" alt="ป้าม่วงหันมามอง" draggable="false">
+    <div class="scene-shade"></div>
+    <div class="game-topbar"><button id="gameHome" class="mini-logo" aria-label="กลับหน้าเลือกด่าน">มนุษย์ป้าม่วง 💜</button><div class="hud-pill trophy">🏆 <b id="roundHud">0/5</b><i id="roundProgress"></i></div><div class="hud-pill clock">◷ <b id="timeHud">01:10</b></div><button id="gamePause" class="pause-round" aria-label="พักเกม">Ⅱ</button></div>
+    <div class="status-wrap"><div id="statusBadge" class="status-badge safe">⌨️ <span id="statusLabel">พิมพ์ได้!</span></div><p id="warningHint" class="warning-hint">หยุดพิมพ์เมื่อป้าหันมา!</p></div>
+    <div class="floating-chat">•••</div><div id="alertMark" class="alert-mark">❗</div>
+    <div class="stage-caption" id="stageCaption">ป้ากำลังเดินเล่น… รีบพิมพ์เลย</div>
+   </div>
+   <div class="editor-panel" id="editorPanel">
+    <div class="typing-box">
+     <div class="prompt-label"><span>พิมพ์ตามนี้</span><span class="bonus-count">⭐ <b id="scoreHud">0</b></span></div>
+     <div id="targetLine" class="target-line" aria-live="off"></div>
+     <div id="fakeInput" class="fake-input" aria-label="ข้อความที่พิมพ์แล้ว"><span id="inputDisplay"></span><i></i><span class="type-placeholder" id="placeholder">แตะปุ่มด้านล่างเพื่อพิมพ์...</span></div>
+     <button id="nativeToggle" class="native-toggle">⌨ ใช้แป้นพิมพ์ของเครื่อง</button>
+     <textarea id="realInput" class="real-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" rows="2" placeholder="พิมพ์ประโยคนี้ที่นี่…" aria-label="พิมพ์ข้อความตามโจทย์"></textarea>
+    </div>
+    <div id="keyboard" class="keyboard" aria-label="แป้นพิมพ์ในเกม">
+      <div class="keyboard-row" id="keyRow1"></div><div class="keyboard-row" id="keyRow2"></div><div class="keyboard-row" id="keyRow3"></div>
+      <div class="keyboard-row bottom-keyrow"><button id="keyHint" class="key special-key" aria-label="พิมพ์อักษรถัดไป">💡</button><button id="keySpace" class="key space-key">วรรค</button><button id="keyBack" class="key special-key" aria-label="ลบ">⌫</button><button id="keyEnter" class="key enter-key">↵</button></div>
+    </div>
+    <div class="input-feedback" id="inputFeedback" aria-live="polite">แตะแป้นเพื่อพิมพ์ · ถ้าป้าหันมาต้องหยุดทันที!</div>
+   </div>
+   <div id="pauseLayer" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pauseHeading"><div class="modal pause-modal"><div class="modal-emoji">☕</div><h2 id="pauseHeading">พักเมาท์ก่อนนะ</h2><p>เกมหยุดเวลาให้แล้ว กลับมาเมื่อพร้อมได้เลย</p><button id="resumeGame" class="big-button">▶ เล่นต่อ</button><button id="restartGame" class="secondary-button">↻ เริ่มด่านใหม่</button><button id="quitGame" class="text-button">กลับไปเลือกด่าน</button></div></div>
+  </section>
+  <section class="screen result-screen" id="resultScreen" aria-label="ผลการแข่งขัน">
+   <div class="result-backdrop"></div><div class="result-content"><div class="result-art" id="resultArt"></div><h1 id="resultHeading">ผ่านด่าน!</h1><p id="resultCaption">ป้าจับไม่ได้!</p><div class="result-stars" id="resultStars">⭐⭐⭐</div><div class="result-stats"><div>🏆 คะแนน <b id="resultScore">0</b></div><div>⏳ เวลาที่เหลือ <b id="resultTime">0 วิ</b></div><div>🪙 ได้เหรียญ <b id="resultCoins">0</b></div></div><p class="result-subline" id="resultSubline"></p><button class="big-button" id="resultNext">เล่นด่านต่อไป ▶</button><button class="secondary-button" id="resultRetry">↻ ลองอีกครั้ง</button><button class="text-button" id="resultMenu">กลับไปเลือกด่าน</button></div>
+  </section>
+  <section class="screen modal-screen" id="helpScreen" aria-label="วิธีเล่น"><div class="page-head"><button class="round-button" data-back aria-label="กลับ">‹</button><h1>📖 วิธีเล่น</h1><span class="round-placeholder"></span></div><div class="panel-scroll"><div class="detail-card"><h2>เมาท์ให้ทัน ป้าหันมาให้หยุด!</h2><div class="how-step"><b>1</b><p><strong>ไฟเขียว 💚</strong> แตะแป้นพิมพ์ เติมข้อความตามโจทย์ให้ครบ</p></div><div class="how-step"><b>2</b><p><strong>ไฟเหลือง 💛</strong> ป้ากำลังจะหันมา รีบหยุดมือ!</p></div><div class="how-step"><b>3</b><p><strong>ไฟแดง ❤️</strong> ห้ามกดแป้น ถ้ากดจะโดนป้าจับได้และแพ้!</p></div><div class="how-step"><b>4</b><p><strong>ครบ 5 ข้อ 🏆</strong> ก่อนหมดเวลาเพื่อผ่านด่าน เก็บดาวและเหรียญ ปลดล็อกด่านต่อไป</p></div><hr><p>โหมดเริ่มต้นเป็น <strong>พิมพ์ง่าย</strong> แตะแป้นใดก็ได้เพื่อเติมตัวอักษรถัดไป เหมาะกับมือถือ หากต้องการพิมพ์จริง ให้เปลี่ยนเป็น <strong>พิมพ์เอง</strong> ในตั้งค่า หรือเลือกใช้แป้นพิมพ์ของเครื่อง</p><p>ข้อความในเกมเป็นเรื่องสมมติ ไม่ได้ถูกส่งหาคนอื่น และคะแนนเก็บเฉพาะเครื่องของคุณ</p></div><button class="big-button" id="helpPlay">เริ่มเล่นเลย ▶</button></div></section>
+  <section class="screen modal-screen" id="settingsScreen" aria-label="ตั้งค่า"><div class="page-head"><button class="round-button" data-back aria-label="กลับ">‹</button><h1>⚙️ ตั้งค่า</h1><span class="round-placeholder"></span></div><div class="panel-scroll"><div class="detail-card"><h2>ปรับเกมตามใจ 💜</h2><label class="setting-row"><span>🔊 เสียงเกม <small>เสียงเตือนเมื่อป้าหัน</small></span><input id="soundSetting" type="checkbox" checked></label><label class="setting-row"><span>📳 ระบบสั่น <small>สั่นเตือนบนมือถือที่รองรับ</small></span><input id="vibrateSetting" type="checkbox" checked></label><div class="setting-group"><b>⌨️ วิธีพิมพ์</b><div class="segmented"><button class="selected" id="assistMode">พิมพ์ง่าย</button><button id="strictMode">พิมพ์เอง</button></div><p>พิมพ์ง่าย = แตะปุ่มใดก็เติมตัวอักษรไปเรื่อย ๆ · พิมพ์เอง = ต้องกดตัวอักษรให้ตรงจริง</p></div><div class="setting-group"><b>👀 ระดับความหูไวของป้า</b><div class="segmented" id="difficultyControls"><button data-difficulty="easy" class="selected">🌷 ง่าย</button><button data-difficulty="normal">👀 ปกติ</button><button data-difficulty="hard">🌶️ ยาก</button></div></div><button id="resetProgress" class="text-button danger">ล้างสถิติเกมในเครื่อง</button></div><button class="big-button" id="saveSettings">บันทึกแล้ว กลับหน้าเกม ✓</button></div></section>
+  <div id="toast" role="status" aria-live="polite"></div>
+ </main>
+ <script src="./engine.js"></script><script src="./game.js"></script>
+</body>
+</html>

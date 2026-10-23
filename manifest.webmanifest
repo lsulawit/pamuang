@@ -1,0 +1,12 @@
+{
+ "name":"มนุษย์ป้าม่วง - Purple Auntie",
+ "short_name":"ป้าม่วง",
+ "description":"พิมพ์ให้ไว หยุดให้ทัน! เกมแนวตั้งธีม 3D",
+ "start_url":"./index.html",
+ "scope":"./",
+ "display":"standalone",
+ "orientation":"portrait",
+ "background_color":"#7833bd",
+ "theme_color":"#7833bd",
+ "icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}
